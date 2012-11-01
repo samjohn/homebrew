@@ -1,36 +1,29 @@
 require 'formula'
-require 'hardware'
 
 class Mongodb < Formula
   homepage 'http://www.mongodb.org/'
 
-  packages = {
-    :x86_64 => {
-      :url => 'http://fastdl.mongodb.org/osx/mongodb-osx-x86_64-1.8.3.tgz',
-      :md5 => '8bdb3e110d6391d66379c5425c1c4e6e',
-      :version => '1.8.3-x86_64'
-    },
-    :i386 => {
-      :url => 'http://fastdl.mongodb.org/osx/mongodb-osx-i386-1.8.3.tgz',
-      :md5 => '5629e49d6d24a99850fb094efb98685c',
-      :version => '1.8.3-i386'
-    }
-  }
+  if Hardware.is_64_bit?
+    url 'http://fastdl.mongodb.org/osx/mongodb-osx-x86_64-2.2.1.tgz'
+    sha1 '6fc3054cdc7f7e64b12742f7e8f9df256a3253d9'
+    version '2.2.1-x86_64'
 
-  package = (Hardware.is_64_bit? and not ARGV.include? '--32bit') ? packages[:x86_64] : packages[:i386]
+    devel do
+      url 'http://fastdl.mongodb.org/osx/mongodb-osx-x86_64-2.3.0.tgz'
+      sha1 '816ca175bd31e2ec1eb8b61793b1d1e4a247a5da'
+      version '2.3.0-x86_64'
+    end
+  else
+    onoe <<-EOS-undent
+    === Error! Unable to proceed with installation. ===
+    Pre-built binaries for 32-bit OS X systems are no longer available.
 
-  url     package[:url]
-  md5     package[:md5]
-  version package[:version]
+    It's not recommended, but if you do need to run MongoDB on a 32-bit
+    version of OS X you can do so by compiling the server from source.
 
-  skip_clean :all
-
-  def options
-    [
-        ['--32bit', 'Override arch detection and install the 32-bit version.'],
-        ['--nojournal', 'Disable write-ahead logging (Journaling)'],
-        ['--rest', 'Enable the REST Interface on the HTTP Status Page'],
-    ]
+    For more info about building MongoDB from source code, please visit:
+    http://www.mongodb.org/display/DOCS/Building+for+OS+X
+    EOS
   end
 
   def install
@@ -41,69 +34,61 @@ class Mongodb < Formula
     (var+'mongodb').mkpath
     (var+'log/mongodb').mkpath
 
-    # Write the configuration files and launchd script
+    # Write the configuration files
     (prefix+'mongod.conf').write mongodb_conf
-    (prefix+'org.mongodb.mongod.plist').write startup_plist
+
+    # Homebrew: it just works.
+    # NOTE plist updated to use prefix/mongodb!
+    mv bin/'mongod', prefix
+    (bin/'mongod').write <<-EOS.undent
+      #!/usr/bin/env ruby
+      ARGV << '--config' << '#{etc}/mongod.conf' unless ARGV.include? '--config'
+      exec "#{prefix}/mongod", *ARGV
+    EOS
+
+    # copy the config file to etc if this is the first install.
+    etc.install prefix+'mongod.conf' unless File.exists? etc+"mongod.conf"
   end
 
   def caveats
-    s = ""
-    s += <<-EOS.undent
-    If this is your first install, automatically load on login with:
-        mkdir -p ~/Library/LaunchAgents
-        cp #{prefix}/org.mongodb.mongod.plist ~/Library/LaunchAgents/
-        launchctl load -w ~/Library/LaunchAgents/org.mongodb.mongod.plist
+    bn = plist_path.basename
+    la = Pathname.new("#{ENV['HOME']}/Library/LaunchAgents")
+    prettypath = "~/Library/LaunchAgents/#{bn}"
+    domain = plist_path.basename('.plist')
+    load = "launchctl load -w #{prettypath}"
+    s = []
 
-    If this is an upgrade and you already have the org.mongodb.mongod.plist loaded:
-        launchctl unload -w ~/Library/LaunchAgents/org.mongodb.mongod.plist
-        cp #{prefix}/org.mongodb.mongod.plist ~/Library/LaunchAgents/
-        launchctl load -w ~/Library/LaunchAgents/org.mongodb.mongod.plist
-
-    Or start it manually:
-        mongod run --config #{prefix}/mongod.conf
-    EOS
-
-    if ARGV.include? "--nojournal"
-        s += ""
-        s += <<-EOS.undent
-        Write Ahead logging (Journaling) has been disabled.
-        EOS
+    # we readlink because this path probably doesn't exist since caveats
+    # occurs before the link step of installation
+    if not (la/bn).file?
+      s << "To have launchd start #{name} at login:"
+      s << "    mkdir -p ~/Library/LaunchAgents" unless la.directory?
+      s << "    ln -s #{HOMEBREW_PREFIX}/opt/#{name}/*.plist ~/Library/LaunchAgents/"
+      s << "Then to load #{name} now:"
+      s << "    #{load}"
+      s << "Or, if you don't want/need launchctl, you can just run:"
+      s << "    mongod"
+    elsif Kernel.system "/bin/launchctl list #{domain} &>/dev/null"
+      s << "You should reload #{name}:"
+      s << "    launchctl unload -w #{prettypath}"
+      s << "    #{load}"
     else
-        s += ""
-        s += <<-EOS.undent
-        MongoDB 1.8+ includes a feature for Write Ahead Logging (Journaling), which has been enabled by default.
-        This is not the default in production (Journaling is disabled); to disable journaling, use --nojournal.
-        EOS
+      s << "To load #{name}:"
+      s << "    #{load}"
     end
-
-    return s
   end
 
-  def mongodb_conf
-    conf = ""
-    conf += <<-EOS.undent
+  def mongodb_conf; <<-EOS.undent
     # Store data in #{var}/mongodb instead of the default /data/db
     dbpath = #{var}/mongodb
+
+    # Append logs to #{var}/log/mongodb/mongo.log
+    logpath = #{var}/log/mongodb/mongo.log
+    logappend = true
 
     # Only accept local connections
     bind_ip = 127.0.0.1
     EOS
-
-    if !ARGV.include? '--nojournal'
-        conf += <<-EOS.undent
-        # Enable Write Ahead Logging (not enabled by default in production deployments)
-        journal = true
-        EOS
-    end
-
-    if ARGV.include? '--rest'
-        conf += <<-EOS.undent
-        # Enable the REST interface on the HTTP Console (startup port + 1000)
-        rest = true
-        EOS
-    end
-
-    return conf
   end
 
   def startup_plist
@@ -113,13 +98,13 @@ class Mongodb < Formula
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>org.mongodb.mongod</string>
+  <string>#{plist_name}</string>
   <key>ProgramArguments</key>
   <array>
-    <string>#{bin}/mongod</string>
+    <string>#{opt_prefix}/mongod</string>
     <string>run</string>
     <string>--config</string>
-    <string>#{prefix}/mongod.conf</string>
+    <string>#{etc}/mongod.conf</string>
   </array>
   <key>RunAtLoad</key>
   <true/>

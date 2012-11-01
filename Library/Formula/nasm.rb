@@ -1,12 +1,16 @@
 require 'formula'
 
 class Nasm < Formula
-  url 'http://www.nasm.us/pub/nasm/releasebuilds/2.09/nasm-2.09.tar.bz2'
   homepage 'http://www.nasm.us/'
-  md5 'bf224f073b3181186114c93e6695e6ac'
+  url 'http://www.nasm.us/pub/nasm/releasebuilds/2.10.05/nasm-2.10.05.tar.bz2'
+  sha256 'de5af263ce344d3a89711c61802e3ad8a4e14a61d539f521f7554cdbbe04ed0f'
+
+  option :universal
 
   def install
-    system "./configure", "--prefix=#{prefix}", "--disable-debug", "--disable-dependency-tracking"
-    system "make install"
+    ENV.universal_binary if build.universal?
+    system "./configure", "--prefix=#{prefix}"
+    system "make everything"
+    system "make install_everything"
   end
 end

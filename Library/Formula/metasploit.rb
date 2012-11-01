@@ -1,9 +1,9 @@
 require 'formula'
 
 class Metasploit < Formula
-  url "http://updates.metasploit.com/data/releases/framework-3.7.2.tar.bz2"
   homepage 'http://www.metasploit.com/framework/'
-  sha1 'b12991d879d7eb664ffd8f72e4fa11611f10a07d'
+  url 'http://downloads.metasploit.com/data/releases/framework-4.4.0.tar.bz2'
+  sha1 '4188c1727364fff857ff1a58cb3f95a5f376cfb1'
 
   head "https://www.metasploit.com/svn/framework3/trunk/", :using => :svn
 
@@ -13,9 +13,8 @@ class Metasploit < Formula
   skip_clean :all
 
   def install
-    libexec.install Dir["msf*",'data','external','lib','modules','plugins','scripts','test','tools']
-    bin.mkpath
-    Dir["#{libexec}/msf*"].each {|f| ln_s f, bin}
+    libexec.install Dir['.svn','armitage','HACKING',"msf*",'data','documentation','external','lib','modules','plugins','scripts','test','tools']
+    bin.install_symlink Dir["#{libexec}/msf*","#{libexec}/armitage"]
   end
 
   def caveats; <<-EOS.undent
